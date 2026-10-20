@@ -21,9 +21,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
@@ -59,11 +56,13 @@ class MainActivity : AppCompatActivity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 spinner.visibility = View.VISIBLE
             }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 spinner.visibility = View.GONE
                 injectEmoteClickListener()
             }
         }
+
         webView.webChromeClient = WebChromeClient()
 
         btnPaste.setOnClickListener {
@@ -83,12 +82,38 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Enter a Twitch username first", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
+
             loadLogsFor(channel, currentUser)
         }
     }
 
     private fun clean(text: String): String {
-        return text.trim().removePrefix("@").substringAfter("twitch.tv/").substringBefore("/").lowercase()
+        val raw = text.trim().removePrefix("@").lowercase()
+        if (raw.isEmpty()) return ""
+
+        val candidate = if (raw.startsWith("http://") || raw.startsWith("https://")) {
+            val uri = Uri.parse(raw)
+            val host = uri.host.orEmpty()
+            val path = uri.path.orEmpty().trim('/')
+
+            when {
+                host.endsWith("twitch.tv") -> path.substringBefore('/').ifBlank { "" }
+                host.isNotEmpty() -> host.substringBefore('.').ifBlank { "" }
+                else -> path.substringBefore('/').ifBlank { "" }
+            }
+        } else {
+            raw
+        }
+
+        return candidate
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringBefore('#')
+            .trim()
+            .removePrefix("/")
+            .removeSuffix("/")
+            .lowercase()
+            .ifBlank { "" }
     }
 
     private fun loadLogsFor(channel: String, user: String) {
@@ -114,6 +139,7 @@ class MainActivity : AppCompatActivity() {
                 }, true);
             })();
         """.trimIndent()
+
         webView.evaluateJavascript(js, null)
     }
 
@@ -135,3 +161,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun resolveEmoteChannel(emoteName: String, emoteSrc: String): String? {
+        val nameMatch = Regex(
+            """(?:^|[^a-z0-9_])(?:channel|c)[:=]?\s*([a-z0-9_]+)""",
+            RegexOption.IGNORE_CASE
+        ).find(emoteName)?.groupValues?.getOrNull(1)
+
+        if (!nameMatch.isNullOrBlank()) {
+            return nameMatch.lowercase()
+        }
+
+        val srcMatch = Regex(
+            """[?&](?:channel|c)=([^&]+)""",
+            RegexOption.IGNORE_CASE
+        ).find(emoteSrc)?.groupValues?.getOrNull(1)
+
+        return srcMatch
+            ?.substringBefore('/')
+            ?.substringBefore('?')
+            ?.trim()
+            ?.ifBlank { null }
+            ?.lowercase()
+    }
+}
