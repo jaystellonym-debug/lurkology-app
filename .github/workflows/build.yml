@@ -28,28 +28,22 @@ jobs:
           gradle-version: "8.5"
           cache-disabled: true
 
-      - name: Verify Project Files
-        run: |
-          echo "### 📁 Project File Tree:" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          find . -maxdepth 6 -not -path '*/.*' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
       - name: Build Debug APK
         run: |
+          set -o pipefail
           gradle assembleDebug --stacktrace 2>&1 | tee build_output.log
 
-      - name: Capture Failure Reason
-        if: failure()
+      - name: Display Error on Summary Page
+        if: always()
         run: |
-          echo "### ❌ Build Failed With Error:" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Build Log Output:" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -n 45 build_output.log >> $GITHUB_STEP_SUMMARY
+          tail -n 50 build_output.log >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Lurkology-App
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
