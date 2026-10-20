@@ -135,28 +135,3 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun resolveEmoteChannel(emoteName: String, emoteSrc: String): String? {
-        try {
-            if (emoteSrc.contains("7tv")) {
-                val id = emoteSrc.substringAfter("emote/").substringBefore("/")
-                val conn = URL("https://7tv.io/v3/emotes/$id").openConnection() as HttpURLConnection
-                conn.connectTimeout = 3000
-                conn.readTimeout = 3000
-                val res = conn.inputStream.bufferedReader().readText()
-                return JSONObject(res).optJSONObject("owner")?.optString("username")?.lowercase()
-            }
-            val conn = URL("https://api.ivr.fi/v2/twitch/emotes/$emoteName").openConnection() as HttpURLConnection
-            conn.connectTimeout = 3000
-            conn.readTimeout = 3000
-            if (conn.responseCode == 200) {
-                val res = conn.inputStream.bufferedReader().readText()
-                val json = JSONObject(res)
-                return json.optString("channelLogin").ifEmpty { json.optString("channelName") }.lowercase()
-            }
-        } catch (_: Exception) {}
-        return null
-    }
-
-    override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
-    }
-}
