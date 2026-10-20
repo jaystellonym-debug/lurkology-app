@@ -18,9 +18,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Accept Android SDK Licenses
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Licenses
+        run: yes | sdkmanager --licenses || true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -29,21 +31,20 @@ jobs:
           cache-disabled: true
 
       - name: Build Debug APK
-        run: |
-          set -o pipefail
-          gradle assembleDebug --stacktrace 2>&1 | tee build_output.log
-
-      - name: Display Error on Summary Page
-        if: always()
-        run: |
-          echo "### 📋 Build Log Output:" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -n 50 build_output.log >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+        run: gradle assembleDebug --stacktrace --no-daemon
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Lurkology-App
           path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+
+      - name: Upload Error Logs If Failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build-Failure-Log
+          path: |
+            app/build/reports/
+            **/build/*.log
