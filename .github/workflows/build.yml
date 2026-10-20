@@ -18,12 +18,6 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Licenses
-        run: yes | sdkmanager --licenses || true
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -31,20 +25,10 @@ jobs:
           cache-disabled: true
 
       - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace --no-daemon
+        run: gradle assembleDebug
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Lurkology-App
           path: app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload Error Logs If Failed
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Build-Failure-Log
-          path: |
-            app/build/reports/
-            **/build/*.log
