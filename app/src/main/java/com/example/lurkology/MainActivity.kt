@@ -161,7 +161,6 @@ class MainActivity : AppCompatActivity() {
     inner class EmoteBridge {
         @JavascriptInterface
         fun onEmoteTapped(emoteName: String, emoteSrc: String) {
-            // Behalte aktuellen Chatter (aus Speicher oder URL)
             val activeUser = if (currentUser.isNotEmpty()) {
                 currentUser
             } else {
@@ -174,3 +173,84 @@ class MainActivity : AppCompatActivity() {
             CoroutineScope(Dispatchers.IO).launch {
                 val foundChannel = resolveEmoteChannel(emoteName, emoteSrc)
                 withContext(Dispatchers.Main) {
+                    if (!foundChannel.isNullOrEmpty()) {
+                        Toast.makeText(this@MainActivity, "Switching to #$foundChannel...", Toast.LENGTH_SHORT).show()
+                        loadLogsFor(foundChannel, activeUser)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun resolveEmoteChannel(emoteName: String, emoteSrc: String): String? {
+        try {
+            // 1. Name oder URL hat bereits den Kanal
+            val nameMatch = Regex(
+                """(?:^|[^a-z0-9_])(?:channel|c)[:=]?\s*([a-z0-9_]+)""",
+                RegexOption.IGNORE_CASE
+            ).find(emoteName)?.groupValues?.getOrNull(1)
+
+            if (!nameMatch.isNullOrBlank()) {
+                return nameMatch.lowercase()
+            }
+
+            val srcMatch = Regex(
+                """[?&](?:channel|c)=([^&]+)""",
+                RegexOption.IGNORE_CASE
+            ).find(emoteSrc)?.groupValues?.getOrNull(1)
+
+            if (!srcMatch.isNullOrBlank()) {
+                return srcMatch.substringBefore('/').substringBefore('?').trim().lowercase()
+            }
+
+            // 2. 7TV Emote Auflösung
+            if (emoteSrc.contains("7tv")) {
+                val id = emoteSrc.substringAfter("emote/").substringBefore("/").substringBefore(".")
+                if (id.isNotEmpty()) {
+                    val conn = URL("https://7tv.io/v3/emotes/$id").openConnection() as HttpURLConnection
+                    conn.connectTimeout = 3000
+                    conn.readTimeout = 3000
+                    if (conn.responseCode == 200) {
+                        val res = conn.inputStream.bufferedReader().readText()
+                        val owner = JSONObject(res).optJSONObject("owner")?.optString("username")
+                        if (!owner.isNullOrEmpty()) return owner.lowercase()
+                    }
+                }
+            }
+
+            // 3. Twitch Subscriber Emote über IVR API
+            if (emoteName.isNotEmpty()) {
+                val conn = URL("https://api.ivr.fi/v2/twitch/emotes/${Uri.encode(emoteName)}").openConnection() as HttpURLConnection
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3000
+                if (conn.responseCode == 200) {
+                    val res = conn.inputStream.bufferedReader().readText()
+                    val json = JSONObject(res)
+                    val chan = json.optString("channelLogin").ifEmpty { json.optString("channelName") }
+                    if (chan.isNotEmpty()) return chan.lowercase()
+                }
+            }
+
+            // 4. Präfix-Erkennung (z.B. bob14LUL -> bob14)
+            if (emoteName.isNotEmpty()) {
+                val prefixRegex = Regex("""^([a-zA-Z0-9_]{3,16})[A-Z]""")
+                val match = prefixRegex.find(emoteName)
+                if (match != null) {
+                    return match.groupValues[1].lowercase()
+                }
+            }
+        } catch (e: Exception) {
+            // Fehler ignorieren
+        }
+
+        return null
+    }
+
+    override fun onBackPressed() {
+        if (webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
+    }
+}
