@@ -1,73 +1,110 @@
-<LinearLayout
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#18181B"
-    android:padding="14dp">
+    android:background="#0E0E10">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="8dp">
+        android:orientation="vertical"
+        android:background="#18181B"
+        android:padding="14dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+
+            <EditText
+                android:id="@+id/editUsername"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:hint="Twitch username"
+                android:textColorHint="#666666"
+                android:textColor="#FFFFFF"
+                android:background="#0E0E10"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/btnPaste"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:text="Paste"
+                android:backgroundTint="#2E2E35"
+                android:textColor="#FFFFFF"
+                android:layout_marginStart="6dp" />
+        </LinearLayout>
 
         <EditText
-            android:id="@+id/editUsername"
-            android:layout_width="0dp"
+            android:id="@+id/editChannel"
+            android:layout_width="match_parent"
             android:layout_height="44dp"
-            android:layout_weight="1"
-            android:hint="Twitch username"
+            android:hint="Channel (optional)"
             android:textColorHint="#666666"
             android:textColor="#FFFFFF"
             android:background="#0E0E10"
-            android:paddingHorizontal="12dp"
-            android:singleLine="true" />
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:singleLine="true"
+            android:layout_marginBottom="8dp" />
 
         <Button
-            android:id="@+id/btnPaste"
-            android:layout_width="wrap_content"
+            android:id="@+id/btnSearchLogs"
+            android:layout_width="match_parent"
             android:layout_height="44dp"
-            android:text="Paste"
-            android:backgroundTint="#2E2E35"
+            android:text="Search Logs"
+            android:backgroundTint="#9146FF"
             android:textColor="#FFFFFF"
-            android:layout_marginStart="6dp" />
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnChannelsDropdown"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:layout_marginTop="6dp"
+            android:text="▼ 0 Fremd-Kanäle aus Emotes erkannt"
+            android:textSize="12sp"
+            android:textColor="#ADADB8"
+            android:backgroundTint="#26262C"
+            android:visibility="gone" />
+
+        <ScrollView
+            android:id="@+id/dropdownContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/layoutChannelsList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#121214"
+                android:padding="4dp" />
+        </ScrollView>
     </LinearLayout>
 
-    <EditText
-        android:id="@+id/editChannel"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:hint="Channel (optional)"
-        android:textColorHint="#666666"
-        android:textColor="#FFFFFF"
-        android:background="#0E0E10"
-        android:paddingHorizontal="12dp"
-        android:singleLine="true"
-        android:layout_marginBottom="8dp" />
+        android:layout_height="match_parent">
 
-    <Button
-        android:id="@+id/btnSearchLogs"
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:text="Search Logs"
-        android:backgroundTint="#9146FF"
-        android:textColor="#FFFFFF"
-        android:textStyle="bold" />
+        <WebView
+            android:id="@+id/inAppViewer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <ProgressBar
+            android:id="@+id/loadingSpinner"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+    </FrameLayout>
 </LinearLayout>
-
-<FrameLayout
-    android:layout_width="match_parent"
-    android:layout_height="match_parent">
-
-    <WebView
-        android:id="@+id/inAppViewer"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-
-    <ProgressBar
-        android:id="@+id/loadingSpinner"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:visibility="gone" />
-</FrameLayout>
