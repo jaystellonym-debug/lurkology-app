@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -15,27 +14,16 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.ProgressBar
-import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.concurrent.ConcurrentHashMap
-
-data class DiscoveredChannel(
-    val channel: String,
-    val emoteName: String,
-    val time: String
-)
 
 class MainActivity : AppCompatActivity() {
 
@@ -43,34 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spinner: ProgressBar
     private lateinit var editUsername: EditText
     private lateinit var editChannel: EditText
-    private lateinit var btnChannelsDropdown: Button
-    private lateinit var dropdownContainer: ScrollView
-    private lateinit var layoutChannelsList: LinearLayout
     private var currentUser: String = ""
-
-    private val emoteCache = ConcurrentHashMap<String, String>()
-
-    // Liste aller bekannten Standard-, Global- und Meme-Emotes (werden strikt ignoriert)
-    private val globalEmotes = hashSetOf(
-        "kappa", "kappapride", "kappaross", "kappaclaus", "keepo",
-        "pogchamp", "pog", "pogu", "pogbones", "lul", "lulw", "omegalul",
-        "biblethump", "residentsleeper", "4head", "5head", "3head",
-        "notlikethis", "wutface", "kreygasm", "smorc", "vohiyo",
-        "heyguys", "dansgame", "failfish", "swiftrage", "coolcat",
-        "trihard", "babyrage", "blessrng", "bloodtrail", "corgiderp",
-        "frankerz", "giveplz", "takenrg", "mrdestructoid", "ohmydog",
-        "onehand", "panicvis", "partyhat", "itsboshytime", "cursebug",
-        "powerup", "powerupl", "powerupr", "twitchlit", "twitchsings",
-        "darkmode", "lightmode", "popcorn", "uncleruckus", "srsly",
-        "sarcasmic", "shush", "soonerlater", "stonelightning", "theilluminati",
-        "thetarfu", "tbsp", "thebinger", "tinyface", "toomuchsauce",
-        "tubthumping", "twitchconhype", "uwu", "volcania", "whoyoureading",
-        "winkstare", "wubbuffet", "yougotthis", "zreknarf", "corgi",
-        "pepehands", "pepega", "monkas", "monkaw", "ez", "clap",
-        "widepeepohappy", "pepejam", "ayaya", "sadge", "cocka",
-        "feelsgoodman", "feelsbadman", "catjam", "gigachad", "yep",
-        "pausechamp", "modcheck", "kekw", "copium", "hopium", "despair"
-    )
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,10 +40,6 @@ class MainActivity : AppCompatActivity() {
 
         editUsername = findViewById(R.id.editUsername)
         editChannel = findViewById(R.id.editChannel)
-        btnChannelsDropdown = findViewById(R.id.btnChannelsDropdown)
-        dropdownContainer = findViewById(R.id.dropdownContainer)
-        layoutChannelsList = findViewById(R.id.layoutChannelsList)
-
         val btnPaste = findViewById<Button>(R.id.btnPaste)
         val btnSearchLogs = findViewById<Button>(R.id.btnSearchLogs)
         webView = findViewById(R.id.inAppViewer)
@@ -105,7 +62,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 spinner.visibility = View.GONE
-                injectEmoteEngine()
+                injectEmoteClickListener()
             }
         }
 
@@ -130,18 +87,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             loadLogsFor(channel, currentUser)
-        }
-
-        btnChannelsDropdown.setOnClickListener {
-            if (layoutChannelsList.childCount == 0) return@setOnClickListener
-
-            if (dropdownContainer.visibility == View.VISIBLE) {
-                dropdownContainer.visibility = View.GONE
-                btnChannelsDropdown.text = btnChannelsDropdown.text.toString().replace("▲", "▼")
-            } else {
-                dropdownContainer.visibility = View.VISIBLE
-                btnChannelsDropdown.text = btnChannelsDropdown.text.toString().replace("▼", "▲")
-            }
         }
     }
 
@@ -179,19 +124,12 @@ class MainActivity : AppCompatActivity() {
             currentUser = user
             editUsername.setText(user)
             editChannel.setText(channel)
-
-            btnChannelsDropdown.visibility = View.VISIBLE
-            btnChannelsDropdown.text = "🔍 Scanne nach Kanal-Emotes..."
-            btnChannelsDropdown.setBackgroundColor(Color.parseColor("#26262C"))
-            dropdownContainer.visibility = View.GONE
-            layoutChannelsList.removeAllViews()
-
             val targetUrl = "https://lurkology.com/logs?c=${Uri.encode(channel)}&u=${Uri.encode(user)}"
             webView.loadUrl(targetUrl)
         }
     }
 
-    private fun injectEmoteEngine() {
+    private fun injectEmoteClickListener() {
         val js = """
             (function() {
                 function handleClick(e) {
@@ -210,48 +148,6 @@ class MainActivity : AppCompatActivity() {
                 }
                 document.removeEventListener('click', handleClick, true);
                 document.addEventListener('click', handleClick, true);
-
-                function scanAllEmotes() {
-                    var found = [];
-                    var images = document.querySelectorAll('img');
-                    images.forEach(function(img) {
-                        var name = img.getAttribute('alt') || img.getAttribute('title') || '';
-                        var src = img.getAttribute('src') || '';
-                        var isEmote = src.indexOf('7tv') !== -1 ||
-                                      src.indexOf('emoticons') !== -1 ||
-                                      src.indexOf('bttv') !== -1 ||
-                                      src.indexOf('betterttv') !== -1 ||
-                                      src.indexOf('ffz') !== -1 ||
-                                      img.className.indexOf('emote') !== -1 ||
-                                      (name && name.length >= 3);
-
-                        if (!isEmote) return;
-
-                        var row = img.closest('tr, li, div, p');
-                        var time = '';
-                        if (row) {
-                            var timeEl = row.querySelector('.timestamp, [class*="time"], [class*="date"], time');
-                            if (timeEl) {
-                                time = timeEl.innerText.trim();
-                            } else {
-                                var match = row.innerText.match(/(\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}(?::\d{2})?)/);
-                                if (match) time = match[1];
-                            }
-                        }
-                        found.push({ name: name, src: src, time: time });
-                    });
-
-                    window.AndroidEmoteBridge.onEmotesScanned(JSON.stringify(found));
-                }
-
-                setTimeout(scanAllEmotes, 800);
-                setTimeout(scanAllEmotes, 2000);
-                setTimeout(scanAllEmotes, 4000);
-
-                var obs = new MutationObserver(function() {
-                    scanAllEmotes();
-                });
-                obs.observe(document.body, { childList: true, subtree: true });
             })();
         """.trimIndent()
 
@@ -280,107 +176,18 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-
-        @JavascriptInterface
-        fun onEmotesScanned(jsonStr: String) {
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val jsonArray = JSONArray(jsonStr)
-                    val channelMap = mutableMapOf<String, DiscoveredChannel>()
-                    val currentChan = clean(editChannel.text.toString()).lowercase()
-
-                    for (i in 0 until jsonArray.length()) {
-                        val obj = jsonArray.getJSONObject(i)
-                        val name = obj.optString("name", "")
-                        val src = obj.optString("src", "")
-                        val time = obj.optString("time", "")
-
-                        val resolved = resolveEmoteChannel(name, src)
-                        // Nur echte Fremdkanäle aufnehmen
-                        if (!resolved.isNullOrBlank() && resolved.lowercase() != currentChan) {
-                            val key = resolved.lowercase()
-                            if (!channelMap.containsKey(key) || (time.isNotEmpty() && channelMap[key]?.time.isNullOrEmpty())) {
-                                channelMap[key] = DiscoveredChannel(key, name, time)
-                            }
-                        }
-                    }
-
-                    val list = channelMap.values.toList()
-                    withContext(Dispatchers.Main) {
-                        updateDropdownUI(list)
-                    }
-                } catch (e: Exception) {
-                    // Ignoriert
-                }
-            }
-        }
-    }
-
-    private fun updateDropdownUI(list: List<DiscoveredChannel>) {
-        if (list.isEmpty()) {
-            btnChannelsDropdown.text = "Keine Fremd-Kanal-Emotes im Verlauf"
-            btnChannelsDropdown.setBackgroundColor(Color.parseColor("#1F1F23"))
-            dropdownContainer.visibility = View.GONE
-            return
-        }
-
-        btnChannelsDropdown.visibility = View.VISIBLE
-        btnChannelsDropdown.text = "▼ ${list.size} Fremd-Kanäle aus Emotes erkannt"
-        btnChannelsDropdown.setBackgroundColor(Color.parseColor("#26262C"))
-        layoutChannelsList.removeAllViews()
-
-        for (item in list) {
-            val row = TextView(this).apply {
-                val timeInfo = if (item.time.isNotEmpty()) " • ${item.time}" else ""
-                val emoteInfo = if (item.emoteName.isNotEmpty()) " (${item.emoteName})" else ""
-                text = "🔴 #${item.channel}$emoteInfo$timeInfo"
-                setTextColor(Color.WHITE)
-                textSize = 13f
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-
-                setOnClickListener {
-                    dropdownContainer.visibility = View.GONE
-                    btnChannelsDropdown.text = "▼ #${item.channel} geladen"
-                    loadLogsFor(item.channel, currentUser)
-                }
-            }
-
-            val divider = View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(1)
-                )
-                setBackgroundColor(Color.parseColor("#2E2E35"))
-            }
-
-            layoutChannelsList.addView(row)
-            layoutChannelsList.addView(divider)
-        }
     }
 
     private fun resolveEmoteChannel(emoteName: String, emoteSrc: String): String? {
-        val cacheKey = "$emoteName|$emoteSrc"
-        emoteCache[cacheKey]?.let { return it }
-
-        val cleanName = emoteName.trim().lowercase()
-
-        // 1. STANDARD & GLOBAL EMOTES SOFORT BLOCKIEREN
-        if (cleanName.isNotEmpty() && globalEmotes.contains(cleanName)) {
-            emoteCache[cacheKey] = ""
-            return null
-        }
-
         try {
-            // 2. Prüfung über URL oder Name-Attribute
+            // 1. Kanal im Namen oder Link
             val nameMatch = Regex(
                 """(?:^|[^a-z0-9_])(?:channel|c)[:=]?\s*([a-z0-9_]+)""",
                 RegexOption.IGNORE_CASE
             ).find(emoteName)?.groupValues?.getOrNull(1)
 
-            if (!nameMatch.isNullOrBlank() && !globalEmotes.contains(nameMatch.lowercase())) {
-                val chan = nameMatch.lowercase()
-                emoteCache[cacheKey] = chan
-                return chan
+            if (!nameMatch.isNullOrBlank()) {
+                return nameMatch.lowercase()
             }
 
             val srcMatch = Regex(
@@ -388,57 +195,44 @@ class MainActivity : AppCompatActivity() {
                 RegexOption.IGNORE_CASE
             ).find(emoteSrc)?.groupValues?.getOrNull(1)
 
-            if (!srcMatch.isNullOrBlank() && !globalEmotes.contains(srcMatch.lowercase())) {
-                val chan = srcMatch.substringBefore('/').substringBefore('?').trim().lowercase()
-                emoteCache[cacheKey] = chan
-                return chan
+            if (!srcMatch.isNullOrBlank()) {
+                return srcMatch.substringBefore('/').substringBefore('?').trim().lowercase()
             }
 
-            // 3. Echte Kanal-Sub-Präfixe (z. B. bob14LUL -> bob14, latteLost -> latte)
-            // Schließt Standard-Wörter wie PogChamp, BibleThump aus, da bereits in Blacklist
-            if (emoteName.isNotEmpty()) {
-                val prefixRegex = Regex("""^([a-zA-Z0-9_]{3,16})[A-Z]""")
-                val match = prefixRegex.find(emoteName)
-                if (match != null) {
-                    val candidate = match.groupValues[1].lowercase()
-                    if (!globalEmotes.contains(candidate)) {
-                        emoteCache[cacheKey] = candidate
-                        return candidate
-                    }
-                }
-            }
-
-            // 4. 7TV Emote (Prüfen, ob es einem echten Streamer gehört)
+            // 2. 7TV Emote
             if (emoteSrc.contains("7tv")) {
                 val id = emoteSrc.substringAfter("emote/").substringBefore("/").substringBefore(".")
                 if (id.isNotEmpty()) {
                     val conn = URL("https://7tv.io/v3/emotes/$id").openConnection() as HttpURLConnection
-                    conn.connectTimeout = 2000
-                    conn.readTimeout = 2000
+                    conn.connectTimeout = 3000
+                    conn.readTimeout = 3000
                     if (conn.responseCode == 200) {
                         val res = conn.inputStream.bufferedReader().readText()
-                        val owner = JSONObject(res).optJSONObject("owner")?.optString("username")?.lowercase()
-                        if (!owner.isNullOrEmpty() && owner != "7tv" && owner != "nightdev" && !globalEmotes.contains(owner)) {
-                            emoteCache[cacheKey] = owner
-                            return owner
-                        }
+                        val owner = JSONObject(res).optJSONObject("owner")?.optString("username")
+                        if (!owner.isNullOrEmpty()) return owner.lowercase()
                     }
                 }
             }
 
-            // 5. Twitch IVR Emote API (Gibt bei echten Kanal-Emotes den channelLogin zurück)
+            // 3. Twitch Sub-Emote via IVR API
             if (emoteName.isNotEmpty()) {
                 val conn = URL("https://api.ivr.fi/v2/twitch/emotes/${Uri.encode(emoteName)}").openConnection() as HttpURLConnection
-                conn.connectTimeout = 2000
-                conn.readTimeout = 2000
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3000
                 if (conn.responseCode == 200) {
                     val res = conn.inputStream.bufferedReader().readText()
                     val json = JSONObject(res)
-                    val chan = json.optString("channelLogin").ifEmpty { json.optString("channelName") }.lowercase()
-                    if (chan.isNotEmpty() && !globalEmotes.contains(chan)) {
-                        emoteCache[cacheKey] = chan
-                        return chan
-                    }
+                    val chan = json.optString("channelLogin").ifEmpty { json.optString("channelName") }
+                    if (chan.isNotEmpty()) return chan.lowercase()
+                }
+            }
+
+            // 4. Sub-Präfix (bob14LUL -> bob14)
+            if (emoteName.isNotEmpty()) {
+                val prefixRegex = Regex("""^([a-zA-Z0-9_]{3,16})[A-Z]""")
+                val match = prefixRegex.find(emoteName)
+                if (match != null) {
+                    return match.groupValues[1].lowercase()
                 }
             }
         } catch (e: Exception) {
@@ -447,8 +241,6 @@ class MainActivity : AppCompatActivity() {
 
         return null
     }
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     override fun onBackPressed() {
         if (webView.canGoBack()) {
