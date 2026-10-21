@@ -62,33 +62,6 @@
             android:backgroundTint="#9146FF"
             android:textColor="#FFFFFF"
             android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btnChannelsDropdown"
-            android:layout_width="match_parent"
-            android:layout_height="38dp"
-            android:layout_marginTop="6dp"
-            android:text="▼ 0 Fremd-Kanäle aus Emotes erkannt"
-            android:textSize="12sp"
-            android:textColor="#ADADB8"
-            android:backgroundTint="#26262C"
-            android:visibility="gone" />
-
-        <ScrollView
-            android:id="@+id/dropdownContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:id="@+id/layoutChannelsList"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="#121214"
-                android:padding="4dp" />
-        </ScrollView>
     </LinearLayout>
 
     <FrameLayout
