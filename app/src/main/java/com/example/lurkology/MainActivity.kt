@@ -21,6 +21,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
@@ -118,6 +121,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadLogsFor(channel: String, user: String) {
         runOnUiThread {
+            currentUser = user
+            editUsername.setText(user)
             editChannel.setText(channel)
             val targetUrl = "https://lurkology.com/logs?c=${Uri.encode(channel)}&u=${Uri.encode(user)}"
             webView.loadUrl(targetUrl)
@@ -127,16 +132,26 @@ class MainActivity : AppCompatActivity() {
     private fun injectEmoteClickListener() {
         val js = """
             (function() {
-                document.addEventListener('click', function(e) {
-                    var target = e.target.closest('img');
+                function handleClick(e) {
+                    var target = e.target.closest('img, [data-emote-id], .emote');
                     if (target) {
-                        var emoteName = target.alt || target.title || "";
-                        var emoteSrc = target.src || "";
-                        if (emoteName || emoteSrc.indexOf('7tv') !== -1) {
-                            window.AndroidEmoteBridge.onEmoteTapped(emoteName, emoteSrc);
+                        var emoteName = target.getAttribute('alt') || target.getAttribute('title') || target.getAttribute('data-name') || '';
+                        var emoteSrc = target.getAttribute('src') || '';
+                        
+                        if (!emoteName) {
+                            var parent = target.closest('[title], [alt]');
+                            if (parent) {
+                                emoteName = parent.getAttribute('title') || parent.getAttribute('alt') || '';
+                            }
+                        }
+
+                        if (emoteName || emoteSrc) {
+                            window.AndroidEmoteBridge.onEmoteTapped(emoteName.trim(), emoteSrc.trim());
                         }
                     }
-                }, true);
+                }
+                document.removeEventListener('click', handleClick, true);
+                document.addEventListener('click', handleClick, true);
             })();
         """.trimIndent()
 
@@ -146,40 +161,16 @@ class MainActivity : AppCompatActivity() {
     inner class EmoteBridge {
         @JavascriptInterface
         fun onEmoteTapped(emoteName: String, emoteSrc: String) {
-            if (currentUser.isEmpty()) return
+            // Behalte aktuellen Chatter (aus Speicher oder URL)
+            val activeUser = if (currentUser.isNotEmpty()) {
+                currentUser
+            } else {
+                val currentUrl = webView.url ?: ""
+                Uri.parse(currentUrl).getQueryParameter("u") ?: clean(editUsername.text.toString())
+            }
+
+            if (activeUser.isEmpty()) return
 
             CoroutineScope(Dispatchers.IO).launch {
                 val foundChannel = resolveEmoteChannel(emoteName, emoteSrc)
                 withContext(Dispatchers.Main) {
-                    if (!foundChannel.isNullOrEmpty()) {
-                        Toast.makeText(this@MainActivity, "Switching to #$foundChannel...", Toast.LENGTH_SHORT).show()
-                        loadLogsFor(foundChannel, currentUser)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun resolveEmoteChannel(emoteName: String, emoteSrc: String): String? {
-        val nameMatch = Regex(
-            """(?:^|[^a-z0-9_])(?:channel|c)[:=]?\s*([a-z0-9_]+)""",
-            RegexOption.IGNORE_CASE
-        ).find(emoteName)?.groupValues?.getOrNull(1)
-
-        if (!nameMatch.isNullOrBlank()) {
-            return nameMatch.lowercase()
-        }
-
-        val srcMatch = Regex(
-            """[?&](?:channel|c)=([^&]+)""",
-            RegexOption.IGNORE_CASE
-        ).find(emoteSrc)?.groupValues?.getOrNull(1)
-
-        return srcMatch
-            ?.substringBefore('/')
-            ?.substringBefore('?')
-            ?.trim()
-            ?.ifBlank { null }
-            ?.lowercase()
-    }
-}
