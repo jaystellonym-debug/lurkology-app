@@ -48,8 +48,29 @@ class MainActivity : AppCompatActivity() {
     private lateinit var layoutChannelsList: LinearLayout
     private var currentUser: String = ""
 
-    // Cache: Jedes Emote wird nur einmal analysiert
     private val emoteCache = ConcurrentHashMap<String, String>()
+
+    // Liste aller bekannten Standard-, Global- und Meme-Emotes (werden strikt ignoriert)
+    private val globalEmotes = hashSetOf(
+        "kappa", "kappapride", "kappaross", "kappaclaus", "keepo",
+        "pogchamp", "pog", "pogu", "pogbones", "lul", "lulw", "omegalul",
+        "biblethump", "residentsleeper", "4head", "5head", "3head",
+        "notlikethis", "wutface", "kreygasm", "smorc", "vohiyo",
+        "heyguys", "dansgame", "failfish", "swiftrage", "coolcat",
+        "trihard", "babyrage", "blessrng", "bloodtrail", "corgiderp",
+        "frankerz", "giveplz", "takenrg", "mrdestructoid", "ohmydog",
+        "onehand", "panicvis", "partyhat", "itsboshytime", "cursebug",
+        "powerup", "powerupl", "powerupr", "twitchlit", "twitchsings",
+        "darkmode", "lightmode", "popcorn", "uncleruckus", "srsly",
+        "sarcasmic", "shush", "soonerlater", "stonelightning", "theilluminati",
+        "thetarfu", "tbsp", "thebinger", "tinyface", "toomuchsauce",
+        "tubthumping", "twitchconhype", "uwu", "volcania", "whoyoureading",
+        "winkstare", "wubbuffet", "yougotthis", "zreknarf", "corgi",
+        "pepehands", "pepega", "monkas", "monkaw", "ez", "clap",
+        "widepeepohappy", "pepejam", "ayaya", "sadge", "cocka",
+        "feelsgoodman", "feelsbadman", "catjam", "gigachad", "yep",
+        "pausechamp", "modcheck", "kekw", "copium", "hopium", "despair"
+    )
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,7 +132,6 @@ class MainActivity : AppCompatActivity() {
             loadLogsFor(channel, currentUser)
         }
 
-        // Klick auf den Dropdown-Balken
         btnChannelsDropdown.setOnClickListener {
             if (layoutChannelsList.childCount == 0) return@setOnClickListener
 
@@ -160,9 +180,8 @@ class MainActivity : AppCompatActivity() {
             editUsername.setText(user)
             editChannel.setText(channel)
 
-            // Status-Balken sofort anzeigen: Sucht...
             btnChannelsDropdown.visibility = View.VISIBLE
-            btnChannelsDropdown.text = "🔍 Scanne nach Fremd-Kanälen..."
+            btnChannelsDropdown.text = "🔍 Scanne nach Kanal-Emotes..."
             btnChannelsDropdown.setBackgroundColor(Color.parseColor("#26262C"))
             dropdownContainer.visibility = View.GONE
             layoutChannelsList.removeAllViews()
@@ -172,11 +191,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Injektiert den Live-Scanner + Klick-Erkennung
     private fun injectEmoteEngine() {
         val js = """
             (function() {
-                // 1. Klick auf ein Emote im Chat
                 function handleClick(e) {
                     var target = e.target.closest('img, [data-emote-id], .emote');
                     if (target) {
@@ -194,7 +211,6 @@ class MainActivity : AppCompatActivity() {
                 document.removeEventListener('click', handleClick, true);
                 document.addEventListener('click', handleClick, true);
 
-                // 2. Scan-Funktion für alle Chat-Nachrichten
                 function scanAllEmotes() {
                     var found = [];
                     var images = document.querySelectorAll('img');
@@ -228,7 +244,6 @@ class MainActivity : AppCompatActivity() {
                     window.AndroidEmoteBridge.onEmotesScanned(JSON.stringify(found));
                 }
 
-                // Mehrere Intervalle + DOM-Beobachter für asynchron geladene Nachrichten
                 setTimeout(scanAllEmotes, 800);
                 setTimeout(scanAllEmotes, 2000);
                 setTimeout(scanAllEmotes, 4000);
@@ -281,7 +296,7 @@ class MainActivity : AppCompatActivity() {
                         val time = obj.optString("time", "")
 
                         val resolved = resolveEmoteChannel(name, src)
-                        // Nur Fremd-Kanäle aufnehmen
+                        // Nur echte Fremdkanäle aufnehmen
                         if (!resolved.isNullOrBlank() && resolved.lowercase() != currentChan) {
                             val key = resolved.lowercase()
                             if (!channelMap.containsKey(key) || (time.isNotEmpty() && channelMap[key]?.time.isNullOrEmpty())) {
@@ -303,7 +318,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateDropdownUI(list: List<DiscoveredChannel>) {
         if (list.isEmpty()) {
-            btnChannelsDropdown.text = "Keine Fremd-Kanäle im Verlauf"
+            btnChannelsDropdown.text = "Keine Fremd-Kanal-Emotes im Verlauf"
             btnChannelsDropdown.setBackgroundColor(Color.parseColor("#1F1F23"))
             dropdownContainer.visibility = View.GONE
             return
@@ -347,14 +362,22 @@ class MainActivity : AppCompatActivity() {
         val cacheKey = "$emoteName|$emoteSrc"
         emoteCache[cacheKey]?.let { return it }
 
+        val cleanName = emoteName.trim().lowercase()
+
+        // 1. STANDARD & GLOBAL EMOTES SOFORT BLOCKIEREN
+        if (cleanName.isNotEmpty() && globalEmotes.contains(cleanName)) {
+            emoteCache[cacheKey] = ""
+            return null
+        }
+
         try {
-            // 1. Schnelle lokale Erkennung über Namen/URL
+            // 2. Prüfung über URL oder Name-Attribute
             val nameMatch = Regex(
                 """(?:^|[^a-z0-9_])(?:channel|c)[:=]?\s*([a-z0-9_]+)""",
                 RegexOption.IGNORE_CASE
             ).find(emoteName)?.groupValues?.getOrNull(1)
 
-            if (!nameMatch.isNullOrBlank()) {
+            if (!nameMatch.isNullOrBlank() && !globalEmotes.contains(nameMatch.lowercase())) {
                 val chan = nameMatch.lowercase()
                 emoteCache[cacheKey] = chan
                 return chan
@@ -365,24 +388,27 @@ class MainActivity : AppCompatActivity() {
                 RegexOption.IGNORE_CASE
             ).find(emoteSrc)?.groupValues?.getOrNull(1)
 
-            if (!srcMatch.isNullOrBlank()) {
+            if (!srcMatch.isNullOrBlank() && !globalEmotes.contains(srcMatch.lowercase())) {
                 val chan = srcMatch.substringBefore('/').substringBefore('?').trim().lowercase()
                 emoteCache[cacheKey] = chan
                 return chan
             }
 
-            // 2. Lokaler Sub-Präfix-Check (bob14LUL -> bob14, latteLost -> latte, etc.)
+            // 3. Echte Kanal-Sub-Präfixe (z. B. bob14LUL -> bob14, latteLost -> latte)
+            // Schließt Standard-Wörter wie PogChamp, BibleThump aus, da bereits in Blacklist
             if (emoteName.isNotEmpty()) {
                 val prefixRegex = Regex("""^([a-zA-Z0-9_]{3,16})[A-Z]""")
                 val match = prefixRegex.find(emoteName)
                 if (match != null) {
-                    val chan = match.groupValues[1].lowercase()
-                    emoteCache[cacheKey] = chan
-                    return chan
+                    val candidate = match.groupValues[1].lowercase()
+                    if (!globalEmotes.contains(candidate)) {
+                        emoteCache[cacheKey] = candidate
+                        return candidate
+                    }
                 }
             }
 
-            // 3. 7TV Emote
+            // 4. 7TV Emote (Prüfen, ob es einem echten Streamer gehört)
             if (emoteSrc.contains("7tv")) {
                 val id = emoteSrc.substringAfter("emote/").substringBefore("/").substringBefore(".")
                 if (id.isNotEmpty()) {
@@ -391,17 +417,16 @@ class MainActivity : AppCompatActivity() {
                     conn.readTimeout = 2000
                     if (conn.responseCode == 200) {
                         val res = conn.inputStream.bufferedReader().readText()
-                        val owner = JSONObject(res).optJSONObject("owner")?.optString("username")
-                        if (!owner.isNullOrEmpty()) {
-                            val chan = owner.lowercase()
-                            emoteCache[cacheKey] = chan
-                            return chan
+                        val owner = JSONObject(res).optJSONObject("owner")?.optString("username")?.lowercase()
+                        if (!owner.isNullOrEmpty() && owner != "7tv" && owner != "nightdev" && !globalEmotes.contains(owner)) {
+                            emoteCache[cacheKey] = owner
+                            return owner
                         }
                     }
                 }
             }
 
-            // 4. Twitch IVR Emote API
+            // 5. Twitch IVR Emote API (Gibt bei echten Kanal-Emotes den channelLogin zurück)
             if (emoteName.isNotEmpty()) {
                 val conn = URL("https://api.ivr.fi/v2/twitch/emotes/${Uri.encode(emoteName)}").openConnection() as HttpURLConnection
                 conn.connectTimeout = 2000
@@ -409,11 +434,10 @@ class MainActivity : AppCompatActivity() {
                 if (conn.responseCode == 200) {
                     val res = conn.inputStream.bufferedReader().readText()
                     val json = JSONObject(res)
-                    val chan = json.optString("channelLogin").ifEmpty { json.optString("channelName") }
-                    if (chan.isNotEmpty()) {
-                        val c = chan.lowercase()
-                        emoteCache[cacheKey] = c
-                        return c
+                    val chan = json.optString("channelLogin").ifEmpty { json.optString("channelName") }.lowercase()
+                    if (chan.isNotEmpty() && !globalEmotes.contains(chan)) {
+                        emoteCache[cacheKey] = chan
+                        return chan
                     }
                 }
             }
