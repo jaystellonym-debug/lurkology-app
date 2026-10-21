@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -14,16 +15,27 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
+
+data class DiscoveredChannel(
+    val channel: String,
+    val emoteName: String,
+    val time: String
+)
 
 class MainActivity : AppCompatActivity() {
 
@@ -31,7 +43,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spinner: ProgressBar
     private lateinit var editUsername: EditText
     private lateinit var editChannel: EditText
+    private lateinit var btnChannelsDropdown: Button
+    private lateinit var dropdownContainer: ScrollView
+    private lateinit var layoutChannelsList: LinearLayout
     private var currentUser: String = ""
+
+    // Cache: Jedes Emote wird nur genau einmal im Netzwerk nachgeschlagen
+    private val emoteCache = ConcurrentHashMap<String, String>()
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,6 +58,10 @@ class MainActivity : AppCompatActivity() {
 
         editUsername = findViewById(R.id.editUsername)
         editChannel = findViewById(R.id.editChannel)
+        btnChannelsDropdown = findViewById(R.id.btnChannelsDropdown)
+        dropdownContainer = findViewById(R.id.dropdownContainer)
+        layoutChannelsList = findViewById(R.id.layoutChannelsList)
+
         val btnPaste = findViewById<Button>(R.id.btnPaste)
         val btnSearchLogs = findViewById<Button>(R.id.btnSearchLogs)
         webView = findViewById(R.id.inAppViewer)
@@ -62,7 +84,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 spinner.visibility = View.GONE
-                injectEmoteClickListener()
+                injectEmoteEngine()
             }
         }
 
@@ -87,6 +109,17 @@ class MainActivity : AppCompatActivity() {
             }
 
             loadLogsFor(channel, currentUser)
+        }
+
+        // Klick auf den Dropdown-Balken öffnet / schließt die Liste
+        btnChannelsDropdown.setOnClickListener {
+            if (dropdownContainer.visibility == View.VISIBLE) {
+                dropdownContainer.visibility = View.GONE
+                btnChannelsDropdown.text = btnChannelsDropdown.text.toString().replace("▲", "▼")
+            } else {
+                dropdownContainer.visibility = View.VISIBLE
+                btnChannelsDropdown.text = btnChannelsDropdown.text.toString().replace("▼", "▲")
+            }
         }
     }
 
@@ -124,27 +157,31 @@ class MainActivity : AppCompatActivity() {
             currentUser = user
             editUsername.setText(user)
             editChannel.setText(channel)
+
+            // Dropdown bei neuer Suche zurücksetzen
+            btnChannelsDropdown.visibility = View.GONE
+            dropdownContainer.visibility = View.GONE
+            layoutChannelsList.removeAllViews()
+
             val targetUrl = "https://lurkology.com/logs?c=${Uri.encode(channel)}&u=${Uri.encode(user)}"
             webView.loadUrl(targetUrl)
         }
     }
 
-    private fun injectEmoteClickListener() {
+    // Injektiert den Klick-Listener und den automatischen Emote-Scanner
+    private fun injectEmoteEngine() {
         val js = """
             (function() {
+                // 1. Klick auf ein beliebiges Emote im Chat
                 function handleClick(e) {
                     var target = e.target.closest('img, [data-emote-id], .emote');
                     if (target) {
                         var emoteName = target.getAttribute('alt') || target.getAttribute('title') || target.getAttribute('data-name') || '';
                         var emoteSrc = target.getAttribute('src') || '';
-                        
                         if (!emoteName) {
                             var parent = target.closest('[title], [alt]');
-                            if (parent) {
-                                emoteName = parent.getAttribute('title') || parent.getAttribute('alt') || '';
-                            }
+                            if (parent) emoteName = parent.getAttribute('title') || parent.getAttribute('alt') || '';
                         }
-
                         if (emoteName || emoteSrc) {
                             window.AndroidEmoteBridge.onEmoteTapped(emoteName.trim(), emoteSrc.trim());
                         }
@@ -152,6 +189,34 @@ class MainActivity : AppCompatActivity() {
                 }
                 document.removeEventListener('click', handleClick, true);
                 document.addEventListener('click', handleClick, true);
+
+                // 2. Automatischer Scan nach allen Emotes in den geladenen Nachrichten
+                setTimeout(function() {
+                    var found = [];
+                    var images = document.querySelectorAll('img');
+                    images.forEach(function(img) {
+                        var name = img.getAttribute('alt') || img.getAttribute('title') || '';
+                        var src = img.getAttribute('src') || '';
+                        if (!name && src.indexOf('7tv') === -1 && src.indexOf('emoticons') === -1 && src.indexOf('bttv') === -1) return;
+
+                        var row = img.closest('tr, li, div, p');
+                        var time = '';
+                        if (row) {
+                            var timeEl = row.querySelector('.timestamp, [class*="time"], [class*="date"], time');
+                            if (timeEl) {
+                                time = timeEl.innerText.trim();
+                            } else {
+                                var match = row.innerText.match(/(\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}(?::\d{2})?)/);
+                                if (match) time = match[1];
+                            }
+                        }
+                        found.push({ name: name, src: src, time: time });
+                    });
+
+                    if (found.length > 0) {
+                        window.AndroidEmoteBridge.onEmotesScanned(JSON.stringify(found));
+                    }
+                }, 1300);
             })();
         """.trimIndent()
 
@@ -180,18 +245,97 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        @JavascriptInterface
+        fun onEmotesScanned(jsonStr: String) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val jsonArray = JSONArray(jsonStr)
+                    val channelMap = mutableMapOf<String, DiscoveredChannel>()
+                    val currentChan = clean(editChannel.text.toString()).lowercase()
+
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        val name = obj.optString("name", "")
+                        val src = obj.optString("src", "")
+                        val time = obj.optString("time", "")
+
+                        val resolved = resolveEmoteChannel(name, src)
+                        // Nur Kanäle aufnehmen, die nicht der aktuell angezeigte Kanal sind
+                        if (!resolved.isNullOrBlank() && resolved.lowercase() != currentChan) {
+                            val key = resolved.lowercase()
+                            if (!channelMap.containsKey(key) || (time.isNotEmpty() && channelMap[key]?.time.isNullOrEmpty())) {
+                                channelMap[key] = DiscoveredChannel(key, name, time)
+                            }
+                        }
+                    }
+
+                    val list = channelMap.values.toList()
+                    withContext(Dispatchers.Main) {
+                        updateDropdownUI(list)
+                    }
+                } catch (e: Exception) {
+                    // Ignoriert
+                }
+            }
+        }
+    }
+
+    private fun updateDropdownUI(list: List<DiscoveredChannel>) {
+        if (list.isEmpty()) {
+            btnChannelsDropdown.visibility = View.GONE
+            dropdownContainer.visibility = View.GONE
+            return
+        }
+
+        btnChannelsDropdown.visibility = View.VISIBLE
+        btnChannelsDropdown.text = "▼ ${list.size} Fremd-Kanäle aus Emotes erkannt"
+        layoutChannelsList.removeAllViews()
+
+        for (item in list) {
+            val row = TextView(this).apply {
+                val timeInfo = if (item.time.isNotEmpty()) " • ${item.time}" else ""
+                val emoteInfo = if (item.emoteName.isNotEmpty()) " (${item.emoteName})" else ""
+                text = "🔴 #${item.channel}$emoteInfo$timeInfo"
+                setTextColor(Color.WHITE)
+                textSize = 13f
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+
+                setOnClickListener {
+                    dropdownContainer.visibility = View.GONE
+                    btnChannelsDropdown.text = "▼ #${item.channel} geladen"
+                    loadLogsFor(item.channel, currentUser)
+                }
+            }
+
+            val divider = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(1)
+                )
+                setBackgroundColor(Color.parseColor("#2E2E35"))
+            }
+
+            layoutChannelsList.addView(row)
+            layoutChannelsList.addView(divider)
+        }
     }
 
     private fun resolveEmoteChannel(emoteName: String, emoteSrc: String): String? {
+        val cacheKey = "$emoteName|$emoteSrc"
+        emoteCache[cacheKey]?.let { return it }
+
         try {
-            // 1. Name oder URL hat bereits den Kanal
+            // 1. Prüfung über Name oder Link
             val nameMatch = Regex(
                 """(?:^|[^a-z0-9_])(?:channel|c)[:=]?\s*([a-z0-9_]+)""",
                 RegexOption.IGNORE_CASE
             ).find(emoteName)?.groupValues?.getOrNull(1)
 
             if (!nameMatch.isNullOrBlank()) {
-                return nameMatch.lowercase()
+                val chan = nameMatch.lowercase()
+                emoteCache[cacheKey] = chan
+                return chan
             }
 
             val srcMatch = Regex(
@@ -200,10 +344,12 @@ class MainActivity : AppCompatActivity() {
             ).find(emoteSrc)?.groupValues?.getOrNull(1)
 
             if (!srcMatch.isNullOrBlank()) {
-                return srcMatch.substringBefore('/').substringBefore('?').trim().lowercase()
+                val chan = srcMatch.substringBefore('/').substringBefore('?').trim().lowercase()
+                emoteCache[cacheKey] = chan
+                return chan
             }
 
-            // 2. 7TV Emote Auflösung
+            // 2. 7TV Emote
             if (emoteSrc.contains("7tv")) {
                 val id = emoteSrc.substringAfter("emote/").substringBefore("/").substringBefore(".")
                 if (id.isNotEmpty()) {
@@ -213,7 +359,11 @@ class MainActivity : AppCompatActivity() {
                     if (conn.responseCode == 200) {
                         val res = conn.inputStream.bufferedReader().readText()
                         val owner = JSONObject(res).optJSONObject("owner")?.optString("username")
-                        if (!owner.isNullOrEmpty()) return owner.lowercase()
+                        if (!owner.isNullOrEmpty()) {
+                            val chan = owner.lowercase()
+                            emoteCache[cacheKey] = chan
+                            return chan
+                        }
                     }
                 }
             }
@@ -227,24 +377,32 @@ class MainActivity : AppCompatActivity() {
                     val res = conn.inputStream.bufferedReader().readText()
                     val json = JSONObject(res)
                     val chan = json.optString("channelLogin").ifEmpty { json.optString("channelName") }
-                    if (chan.isNotEmpty()) return chan.lowercase()
+                    if (chan.isNotEmpty()) {
+                        val c = chan.lowercase()
+                        emoteCache[cacheKey] = c
+                        return c
+                    }
                 }
             }
 
-            // 4. Präfix-Erkennung (z.B. bob14LUL -> bob14)
+            // 4. Präfix-Erkennung (z. B. bob14LUL -> bob14)
             if (emoteName.isNotEmpty()) {
                 val prefixRegex = Regex("""^([a-zA-Z0-9_]{3,16})[A-Z]""")
                 val match = prefixRegex.find(emoteName)
                 if (match != null) {
-                    return match.groupValues[1].lowercase()
+                    val chan = match.groupValues[1].lowercase()
+                    emoteCache[cacheKey] = chan
+                    return chan
                 }
             }
         } catch (e: Exception) {
-            // Fehler ignorieren
+            // Ignoriert
         }
 
         return null
     }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     override fun onBackPressed() {
         if (webView.canGoBack()) {
